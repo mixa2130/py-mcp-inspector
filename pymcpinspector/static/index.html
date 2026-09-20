@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PyMCPinspector</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>🔎</text></svg>">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <button class="icon" id="btn-sidebar" aria-controls="sidebar" aria-expanded="true"
+            title="Hide the settings sidebar">☰</button>
+    <h1>PyMCPinspector</h1>
+    <span class="version" id="version"></span>
+    <div class="status-line">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">idle</span>
+      <span class="target" id="status-target"></span>
+    </div>
+    <span class="spacer"></span>
+    <span class="badge" id="badge-protocol" hidden></span>
+    <span class="badge" id="badge-session" hidden></span>
+    <button class="small" id="btn-ping" disabled>Ping</button>
+  </header>
+
+  <!-- ------------------------------------------------------------ sidebar -->
+  <aside id="sidebar">
+
+    <div class="section">
+      <h2>Presets<span class="spacer"></span>
+        <span class="badge warn" id="preset-dirty" hidden
+              title="The sidebar no longer matches the saved preset">edited</span>
+        <button class="icon small" id="btn-import" title="Import an mcpServers JSON block">Import</button>
+      </h2>
+      <div class="row" style="margin-bottom:8px">
+        <select id="preset-select"><option value="">— none —</option></select>
+      </div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button class="small" id="btn-preset-save" disabled title="Overwrite the selected preset">Save</button>
+        <button class="small" id="btn-preset-saveas" title="Store the sidebar under a new name">Save as…</button>
+      </div>
+      <div class="btn-row">
+        <button class="small" id="btn-preset-rename" disabled>Rename</button>
+        <button class="small" id="btn-preset-share">Share…</button>
+        <button class="small danger" id="btn-preset-delete" disabled>Delete</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Transport</h2>
+      <label class="field">
+        <span>Kind</span>
+        <select id="cfg-transport">
+          <option value="streamable-http">Streamable HTTP</option>
+          <option value="sse">SSE (HTTP + Server-Sent Events)</option>
+          <option value="stdio">STDIO (local process)</option>
+        </select>
+      </label>
+
+      <div id="http-fields">
+        <label class="field">
+          <span>Server URL</span>
+          <input type="text" id="cfg-url" placeholder="https://example.com/mcp" spellcheck="false">
+        </label>
+      </div>
+
+      <div id="stdio-fields" hidden>
+        <label class="field">
+          <span>Command</span>
+          <input type="text" id="cfg-command" placeholder="uvx" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Arguments</span>
+          <input type="text" id="cfg-args" placeholder="mcp-server-git --repository ." spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Working directory</span>
+          <input type="text" id="cfg-cwd" placeholder="(inspector's cwd)" spellcheck="false">
+        </label>
+        <label class="check" style="margin-bottom:10px">
+          <input type="checkbox" id="cfg-inherit-env" checked> Inherit the inspector's environment
+        </label>
+      </div>
+    </div>
+
+    <div class="section" id="section-headers">
+      <h2>HTTP headers<span class="spacer"></span>
+        <button class="icon small" id="btn-header-add">+ Add</button>
+      </h2>
+      <div id="headers-list"></div>
+      <p class="hint">Sent with every request of the HTTP transports, including the SSE/GET stream.
+        A row set to a UUID format mints a new value on ⟳.</p>
+    </div>
+
+    <div class="section" id="section-auth">
+      <h2>Authentication</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label class="field" style="margin:0">
+          <span>Header name</span>
+          <input type="text" id="cfg-auth-header" value="Authorization" spellcheck="false">
+        </label>
+        <label class="field" style="margin:0;max-width:110px">
+          <span>Scheme</span>
+          <input type="text" id="cfg-auth-scheme" value="Bearer" spellcheck="false">
+        </label>
+      </div>
+      <label class="field">
+        <span>Token</span>
+        <input type="password" id="cfg-token" placeholder="(none)" spellcheck="false">
+        <span class="hint">Not saved in presets — it expires long before one does. The header name and
+          scheme above are.</span>
+      </label>
+      <label class="field">
+        <span>Token script</span>
+        <input type="text" id="cfg-auth-plugin" placeholder="(none)" spellcheck="false"
+               title="A script the inspector runs to get the token">
+      </label>
+      <label class="field">
+        <span>Script arguments</span>
+        <input type="text" id="cfg-auth-plugin-args" placeholder="--profile prod" spellcheck="false">
+      </label>
+      <div class="btn-row">
+        <button class="small" id="btn-auth-plugin" disabled>Get token</button>
+        <button class="small" id="btn-auth-apply" disabled>Apply to live session</button>
+      </div>
+      <p class="hint" id="auth-plugin-hint">The script runs as a separate process with the inspector's
+        own rights, and whatever it prints becomes the token. Connect runs it first when it is set.</p>
+      <p class="hint" id="auth-apply-hint">Sends a fresh token on the next request, keeping the session
+        and its <span class="mono">mcp-session-id</span>. Connect to enable.</p>
+    </div>
+
+    <div class="section collapsible collapsed" id="section-tls">
+      <h2 role="button" tabindex="0" aria-expanded="false" aria-controls="section-tls-body">
+        <span class="chev" aria-hidden="true">▾</span>TLS<span class="spacer"></span>
+        <span class="badge summary" id="tls-summary" hidden></span>
+      </h2>
+      <div class="section-body" id="section-tls-body">
+      <label class="check" style="margin-bottom:10px">
+        <input type="checkbox" id="cfg-verify-tls" checked> Verify the server certificate
+      </label>
+      <label class="field">
+        <span>CA certificate (file or directory)</span>
+        <input type="text" id="cfg-ca-bundle" placeholder="/path/to/ca.pem" spellcheck="false">
+        <span class="hint">Replaces the system trust store, like curl's <code>--cacert</code>.</span>
+      </label>
+      <label class="field">
+        <span>Client certificate</span>
+        <input type="text" id="cfg-client-cert" placeholder="/path/to/client.pem" spellcheck="false">
+      </label>
+      <label class="field">
+        <span>Client key</span>
+        <input type="text" id="cfg-client-key" placeholder="(omit if the key is inside the certificate)" spellcheck="false">
+      </label>
+      <label class="field">
+        <span>Key passphrase</span>
+        <input type="password" id="cfg-client-key-password" placeholder="(none)" spellcheck="false">
+      </label>
+      </div>
+    </div>
+
+    <div class="section" id="section-env" hidden>
+      <h2>Environment<span class="spacer"></span>
+        <button class="icon small" id="btn-env-add">+ Add</button>
+      </h2>
+      <div id="env-list"></div>
+    </div>
+
+    <div class="section collapsible collapsed" id="section-advanced">
+      <h2 role="button" tabindex="0" aria-expanded="false" aria-controls="section-advanced-body">
+        <span class="chev" aria-hidden="true">▾</span>Advanced<span class="spacer"></span>
+        <span class="badge summary" id="advanced-summary" hidden></span>
+      </h2>
+      <div class="section-body" id="section-advanced-body">
+      <div class="row" style="margin-bottom:8px">
+        <label class="field" style="margin:0">
+          <span>Request timeout (s)</span>
+          <input type="number" id="cfg-request-timeout" value="60" min="1" step="1">
+        </label>
+        <label class="field" style="margin:0">
+          <span>HTTP timeout (s)</span>
+          <input type="number" id="cfg-http-timeout" value="30" min="1" step="1">
+        </label>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="field" style="margin:0">
+          <span>SSE read timeout (s)</span>
+          <input type="number" id="cfg-sse-timeout" value="300" min="1" step="1">
+        </label>
+        <label class="field" style="margin:0">
+          <span>Log level on connect</span>
+          <select id="cfg-log-level"><option value="">— server default —</option></select>
+        </label>
+      </div>
+      <label class="field">
+        <span>MCP protocol version</span>
+        <select id="cfg-protocol-version"></select>
+        <span class="hint" id="protocol-hint"></span>
+      </label>
+      <div class="row" style="margin-bottom:8px">
+        <label class="field" style="margin:0">
+          <span>Client name</span>
+          <input type="text" id="cfg-client-name" value="pymcpinspector" spellcheck="false">
+        </label>
+        <label class="field" style="margin:0">
+          <span>Client version</span>
+          <input type="text" id="cfg-client-version" value="0.1.0" spellcheck="false">
+        </label>
+      </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="btn-row">
+        <button class="primary" id="btn-connect">Connect</button>
+        <button id="btn-disconnect" disabled>Disconnect</button>
+      </div>
+      <div id="connect-error" style="margin-top:10px" hidden></div>
+    </div>
+
+    <div class="section" id="section-server" hidden>
+      <h2>Server</h2>
+      <dl class="meta-grid" id="server-meta"></dl>
+      <div class="chips" id="server-caps"></div>
+      <div id="server-instructions"></div>
+    </div>
+  </aside>
+
+  <div id="sidebar-resizer" role="separator" aria-orientation="vertical" tabindex="0"
+       aria-controls="sidebar" title="Drag to resize, or use the arrow keys"></div>
+
+  <!-- --------------------------------------------------------------- main -->
+  <div id="main">
+    <nav class="tabs" id="main-tabs">
+      <button data-tab="tools" class="active">Tools<span class="count" id="count-tools"></span></button>
+      <button data-tab="resources">Resources<span class="count" id="count-resources"></span></button>
+      <button data-tab="prompts">Prompts<span class="count" id="count-prompts"></span></button>
+      <button data-tab="roots">Roots</button>
+      <button data-tab="raw">Raw request</button>
+      <span class="spacer"></span>
+      <button data-tab="pending" id="tab-pending">Server requests<span class="count" id="count-pending"></span></button>
+    </nav>
+
+    <section class="pane split active" id="pane-tools">
+      <div class="list">
+        <div class="list-toolbar">
+          <input type="text" id="tools-filter" placeholder="Filter…">
+          <button class="small" id="btn-tools-refresh">List</button>
+          <button class="small" id="btn-tools-curl" title="Render this listing as curl">curl</button>
+        </div>
+        <div id="tools-list"></div>
+      </div>
+      <div class="detail" id="tools-detail"><div class="empty">Connect, then press <b>List</b>.</div></div>
+    </section>
+
+    <section class="pane split" id="pane-resources">
+      <div class="list">
+        <div class="list-toolbar">
+          <input type="text" id="resources-filter" placeholder="Filter…">
+          <button class="small" id="btn-resources-refresh">List</button>
+          <button class="small" id="btn-resources-curl" title="Render this listing as curl">curl</button>
+        </div>
+        <div id="resources-list"></div>
+      </div>
+      <div class="detail" id="resources-detail"><div class="empty">Connect, then press <b>List</b>.</div></div>
+    </section>
+
+    <section class="pane split" id="pane-prompts">
+      <div class="list">
+        <div class="list-toolbar">
+          <input type="text" id="prompts-filter" placeholder="Filter…">
+          <button class="small" id="btn-prompts-refresh">List</button>
+          <button class="small" id="btn-prompts-curl" title="Render this listing as curl">curl</button>
+        </div>
+        <div id="prompts-list"></div>
+      </div>
+      <div class="detail" id="prompts-detail"><div class="empty">Connect, then press <b>List</b>.</div></div>
+    </section>
+
+    <section class="pane" id="pane-roots" style="overflow-y:auto">
+      <div style="padding:14px;max-width:760px">
+        <h3>Roots</h3>
+        <p class="subtitle">Filesystem roots this client advertises to the server via <span class="mono">roots/list</span>.</p>
+        <div id="roots-list"></div>
+        <div class="btn-row" style="max-width:320px;margin-top:10px">
+          <button class="small" id="btn-root-add">+ Add root</button>
+          <button class="small primary" id="btn-roots-apply">Apply &amp; notify</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane" id="pane-raw" style="overflow-y:auto">
+      <div style="padding:14px;max-width:900px">
+        <h3>Raw JSON-RPC request</h3>
+        <p class="subtitle">Send any method over the live session — useful for experimental or vendor methods.</p>
+        <div class="row" style="margin-bottom:10px">
+          <label class="field" style="margin:0">
+            <span>Method</span>
+            <input type="text" id="raw-method" placeholder="tools/list" spellcheck="false">
+          </label>
+        </div>
+        <label class="field">
+          <span>Params (JSON object, optional)</span>
+          <textarea id="raw-params" rows="8" spellcheck="false" placeholder="{}"></textarea>
+        </label>
+        <div class="btn-row" style="max-width:320px">
+          <button class="primary" id="btn-raw-send">Send</button>
+          <button id="btn-raw-curl" title="Render this request as a curl command">Copy as curl</button>
+        </div>
+        <div id="raw-result" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <section class="pane" id="pane-pending" style="overflow-y:auto">
+      <div style="padding:14px;max-width:900px" id="pending-body"></div>
+    </section>
+
+    <div id="log-resizer"></div>
+
+    <div id="log-panel">
+      <nav class="tabs" id="log-tabs">
+        <button data-log="all" class="active">All</button>
+        <button data-log="error">Errors<span class="count" id="count-errors"></span></button>
+        <button data-log="message">JSON-RPC</button>
+        <button data-log="http">HTTP</button>
+        <button data-log="notification">Notifications</button>
+        <button data-log="log">Server logs</button>
+        <button data-log="stderr">stderr</button>
+        <span class="spacer"></span>
+        <label class="check" style="padding:0 10px">
+          <input type="checkbox" id="log-autoscroll" checked> autoscroll
+        </label>
+        <button class="small" id="btn-log-clear" style="margin:6px 8px">Clear</button>
+      </nav>
+      <div id="log-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-backdrop"><div class="modal" id="modal"></div></div>
+<div id="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

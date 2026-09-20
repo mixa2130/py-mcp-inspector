@@ -1,0 +1,7 @@
+# Runtime dependencies only, repeated from [project].dependencies in
+# pyproject.toml for installs that do not go through the package.
+# Test and lint tooling is the `dev` extra there: `pip install -e ".[dev]"`.
+mcp>=2.0
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
