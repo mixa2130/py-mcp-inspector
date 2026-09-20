@@ -293,50 +293,8 @@ const valueOf = (row) => row.children[2];
 
 // --- refreshing the token on a live session --------------------------------
 
-const authCall = (calls) => {
-  const call = calls.filter((c) => c.path === "/api/auth").pop();
-  return call && JSON.parse(call.options.body);
-};
-
-{
-  const { doc } = await withDraft(http());
-  check("the Apply button is off before connecting", doc.getElementById("btn-auth-apply").disabled);
-  check("and says why", !doc.getElementById("auth-apply-hint").hidden);
-}
-
-{
-  const connected = { status: "connected", transport: "streamable-http", target: "http://x/mcp", pending: [] };
-  const { doc, calls } = await boot({
-    storage: { [DRAFT]: JSON.stringify(http({ bearer_token: "first" })) },
-    routes: { "/api/connect": connected, "/api/tools/list": { result: { tools: [] } } },
-  });
-  click(doc, doc.getElementById("btn-connect"));
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  check("connecting enables Apply", !doc.getElementById("btn-auth-apply").disabled);
-
-  fill(doc.getElementById("cfg-token"), "second");
-  click(doc, doc.getElementById("btn-auth-apply"));
-  await new Promise((resolve) => setTimeout(resolve, 20));
-
-  const sent = authCall(calls);
-  check("the new token goes to /api/auth", !!sent && sent.token === "second", JSON.stringify(sent));
-  check("the scheme and header name come along",
-    !!sent && sent.scheme === "Bearer" && sent.header === "Authorization", JSON.stringify(sent));
-  check("no reconnect was triggered", calls.filter((c) => c.path === "/api/connect").length === 1);
-  check("the button is usable again", !doc.getElementById("btn-auth-apply").disabled);
-}
-
-{
-  // stdio has no headers to re-send; the button must not offer to.
-  const connected = { status: "connected", transport: "stdio", target: "python demo.py", pending: [] };
-  const { doc } = await boot({
-    storage: { [DRAFT]: JSON.stringify({ transport: "stdio", command: "python" }) },
-    routes: { "/api/connect": connected, "/api/tools/list": { result: { tools: [] } } },
-  });
-  click(doc, doc.getElementById("btn-connect"));
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  check("a stdio connection leaves Apply off", doc.getElementById("btn-auth-apply").disabled);
-}
+// The credential has no button of its own any more: it applies itself, and how
+// that behaves lives in auth.test.mjs.
 
 // --- Ping, on a protocol that still has it ---------------------------------
 

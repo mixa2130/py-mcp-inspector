@@ -27,6 +27,11 @@ const state = {
   // loaded or saved. Comparing against it is what the `edited` badge reports;
   // comparing the stored config directly would trip over `args` being a string here.
   presetBaseline: null,
+  // The credential the live session is known to be carrying, and the timer that
+  // walks an edit over to it. Null means "not known", so the next edit is sent
+  // rather than compared against a value that may never have gone out.
+  liveAuth: null,
+  authApplyTimer: null,
   streaming: false,
 };
 
@@ -650,6 +655,61 @@ function refreshAuthPluginState() {
   $("#btn-auth-plugin").disabled = !$("#cfg-auth-plugin").value.trim();
 }
 
+/* ------------------------------------------------ credentials on the wire */
+
+const AUTH_APPLY_DELAY = 250;   // ms of quiet before an edit reaches the session
+
+/** What the authentication block currently says to send. */
+function currentAuth() {
+  return {
+    token: $("#cfg-token").value,
+    scheme: $("#cfg-auth-scheme").value.trim(),
+    header: $("#cfg-auth-header").value.trim() || "Authorization",
+  };
+}
+
+/** Whether a live session can take a new credential at all: an idle inspector
+ *  has nothing to apply it to, and a stdio child keeps the environment it was
+ *  spawned with. */
+function authIsLive() {
+  return state.status.status === "connected" && state.status.transport !== "stdio";
+}
+
+/** Put what the sidebar shows on the HTTP clients the transport already uses.
+ *
+ *  There is no button for this: a credential sitting in the form but not going
+ *  out is exactly the confusion this inspector exists to remove. Returns whether
+ *  a request actually went out, so the caller can say so.
+ */
+async function applyAuthToSession(auth = currentAuth()) {
+  if (!authIsLive()) return false;
+  if (state.liveAuth && JSON.stringify(state.liveAuth) === JSON.stringify(auth)) return false;
+  state.liveAuth = auth;
+  try {
+    await api("/api/auth", auth);
+    return true;
+  } catch (err) {
+    // It never reached the session, so the next edit has to try again instead of
+    // comparing itself against a value that only ever existed here.
+    state.liveAuth = null;
+    fail("auth", err);
+    return false;
+  }
+}
+
+/** A token is typed or pasted character by character, and a keystroke is not a
+ *  credential; the swap goes out once the field has been quiet. */
+function scheduleAuthApply() {
+  clearTimeout(state.authApplyTimer);
+  if (!authIsLive()) return;
+  state.authApplyTimer = setTimeout(async () => {
+    const auth = currentAuth();
+    if (await applyAuthToSession(auth)) {
+      toast(auth.token.trim() ? "Token applied to the live session" : "Auth header cleared", "ok");
+    }
+  }, AUTH_APPLY_DELAY);
+}
+
 /* ------------------------------------------------------------- connection */
 
 async function connect() {
@@ -673,6 +733,9 @@ async function connect() {
       applyStatus(result.status || { status: "error", error: result.error.message });
     } else {
       applyStatus(result);
+      // The connection carries this credential already; only an edit after it
+      // is worth a swap.
+      state.liveAuth = currentAuth();
       toast("Connected", "ok");
       clearCatalog();
       state.attached = true;
@@ -731,11 +794,13 @@ function applyStatus(status) {
   const pingable = connected && sessionHasPing();
   $("#btn-ping").hidden = connected && !pingable;
   $("#btn-ping").disabled = !pingable;
-  // Headers only exist on the HTTP transports; a stdio child's environment is
-  // fixed when it is spawned, so there is nothing to re-send.
-  const httpSession = connected && state.status.transport !== "stdio";
-  $("#btn-auth-apply").disabled = !httpSession;
-  $("#auth-apply-hint").hidden = httpSession;
+  // With the session gone, nothing is carrying a credential any more: a pending
+  // swap has nowhere to land, and the next session must not be compared against
+  // what an earlier one was sending.
+  if (!connected) {
+    clearTimeout(state.authApplyTimer);
+    state.liveAuth = null;
+  }
 
   const negotiated = state.status.protocol_version;
   const requested = state.status.requested_protocol_version;
@@ -1748,51 +1813,35 @@ function bindEvents() {
   });
 
   $("#cfg-auth-plugin").addEventListener("input", refreshAuthPluginState);
+  // The credential applies itself, and these three fields are what it is made
+  // of. `change` as well as `input`: a value put there by a password manager or
+  // by form restoration arrives without a keystroke, and the whole point is that
+  // what the field shows is what the session sends.
+  ["#cfg-token", "#cfg-auth-scheme", "#cfg-auth-header"].forEach((selector) => {
+    $(selector).addEventListener("input", scheduleAuthApply);
+    $(selector).addEventListener("change", scheduleAuthApply);
+  });
   $("#btn-auth-plugin").addEventListener("click", async () => {
     const button = $("#btn-auth-plugin");
     button.disabled = true;
     button.textContent = "Running…";
     try {
-      const config = readConfig();
-      const result = await runAuthPlugin(config);
-      // On a live session a token is worth nothing until it is actually going
-      // out, and the viewer asked for a token, not for homework.
-      if (!$("#btn-auth-apply").disabled) {
-        await api("/api/auth", {
-          token: result.token,
-          scheme: result.scheme ?? config.auth_scheme,
-          header: result.header || config.auth_header_name,
-        });
-        if (result.scheme != null) $("#cfg-auth-scheme").value = result.scheme;
-        if (result.header) $("#cfg-auth-header").value = result.header;
-        persistDraft();
-        toast("Token fetched and applied to the live session", "ok");
-      } else {
-        toast("Token fetched", "ok");
-      }
+      const result = await runAuthPlugin(readConfig());
+      // The script may choose the header and the scheme as well, and the sidebar
+      // has to show what is being sent before it goes out.
+      if (result.scheme != null) $("#cfg-auth-scheme").value = result.scheme;
+      if (result.header) $("#cfg-auth-header").value = result.header;
+      persistDraft();
+      // A fetched token goes out now rather than after the debounce: the click
+      // already said when, and nothing more is coming.
+      clearTimeout(state.authApplyTimer);
+      toast(await applyAuthToSession()
+        ? "Token fetched and applied to the live session" : "Token fetched", "ok");
     } catch (err) {
       fail("auth plugin", err);
     } finally {
       button.textContent = "Get token";
       refreshAuthPluginState();
-    }
-  });
-
-  $("#btn-auth-apply").addEventListener("click", async () => {
-    const button = $("#btn-auth-apply");
-    button.disabled = true;
-    try {
-      await api("/api/auth", {
-        token: $("#cfg-token").value,
-        scheme: $("#cfg-auth-scheme").value.trim(),
-        header: $("#cfg-auth-header").value.trim() || "Authorization",
-      });
-      persistDraft();
-      toast($("#cfg-token").value.trim() ? "Token applied to the live session" : "Auth header cleared", "ok");
-    } catch (err) {
-      fail("auth", err);
-    } finally {
-      applyStatus(state.status);
     }
   });
 

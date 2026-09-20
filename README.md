@@ -1,130 +1,111 @@
+[English](README.md) | [Русский](README.ru.md)
 # PyMCPinspector
 
-Аналог [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector) на Python.
-Локальный веб-интерфейс для подключения к MCP-серверам, с полным контролем над транспортом и HTTP-заголовками.
+A Python counterpart to [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector).
+A local web UI for talking to MCP servers, with full control over the transport and the HTTP headers.
+
 
 ```
 pip install -e .
 pymcpinspector
 ```
 
-Откроется `http://127.0.0.1:6288/`.
+Opens `http://127.0.0.1:6288/`.
 
-Для разработки: `pip install -e ".[dev]"` — тесты и линтер вынесены в extra `dev`,
-при обычной установке они не подтягиваются. Правила доработки — в [AGENTS.md](AGENTS.md),
-история изменений — в [CHANGELOG.md](CHANGELOG.md).
+![The inspector connected to the demo server: tools on the left, the result of a call on the right](docs/screenshots/overview.jpg)
 
-## Что умеет
+Every screenshot here is the real UI against `examples/demo_server.py`, so you can reproduce
+each one in a couple of minutes.
 
-**Транспорты** — все три, переключаются в UI:
+For development: `pip install -e ".[dev]"` — tests and the linter live in the `dev` extra and
+are not pulled in by an ordinary install. House rules for changing the code are in
+[AGENTS.md](AGENTS.md), the history is in [CHANGELOG.md](CHANGELOG.md).
 
-| Транспорт | Что нужно указать | Заголовки |
+## What it does
+
+**Transports** — all three, switched in the UI:
+
+| Transport | What you fill in | Headers |
 |---|---|---|
-| `streamable-http` | URL эндпоинта | да — на всех запросах, включая GET-стрим |
-| `sse` | URL SSE-эндпоинта | да — на SSE-стриме и на POST сообщений |
-| `stdio` | команда, аргументы, cwd, env | нет (не HTTP), вместо них — переменные окружения |
+| `streamable-http` | endpoint URL | yes — on every request, including the GET stream |
+| `sse` | SSE endpoint URL | yes — on the SSE stream and on the message POSTs |
+| `stdio` | command, arguments, cwd, env | no (not HTTP) — environment variables instead |
 
-Для `sse` и `streamable-http` доступны также настройки TLS (см. ниже).
+`sse` and `streamable-http` also get the TLS settings described below.
 
-**Версия протокола.** Селектор в блоке Advanced — `auto` или любая конкретная ревизия.
-Выбор определяет не только строку в запросе, но и способ подключения:
+**Protocol version.** A selector in the Advanced block — `auto`, or any specific revision.
+The choice decides not only the string in the request but how the connection is made:
 
-| Значение | Как подключается |
+| Value | How it connects |
 |---|---|
-| `auto` (по умолчанию) | проба `server/discover`, при отказе — откат на `initialize`; ровно то, что делает `Client` из SDK |
-| `2026-07-28` | `server/discover` напрямую (эра пер-запросного конверта) |
-| `2025-11-25` · `2025-06-18` · `2025-03-26` · `2024-11-05` | `initialize` с этой версией в `protocolVersion` |
+| `auto` (default) | try `server/discover`, fall back to `initialize` if it is refused; exactly what the SDK's `Client` does |
+| `2026-07-28` | `server/discover` directly (the per-request envelope era) |
+| `2025-11-25` · `2025-06-18` · `2025-03-26` · `2024-11-05` | `initialize` carrying that version in `protocolVersion` |
 
-`ClientSession.initialize()` всегда предлагает только новейшую handshake-ревизию, поэтому
-для остальных инспектор собирает `initialize` сам. Если сервер ответит другой версией,
-она подставляется в бейдж в шапке как `2024-11-05 → 2025-06-18`, а в журнал уходит
-предупреждение — соединение при этом не рвётся.
+`ClientSession.initialize()` only ever offers the newest handshake revision, so the inspector
+assembles `initialize` itself for the rest. If the server answers with a different version, it
+shows up in the header badge as `2024-11-05 → 2025-06-18` and a warning goes to the log — the
+connection is not dropped over it.
 
-Учтите, что ревизия `2026-07-28` убрала часть методов: `ping`, `resources/subscribe` и
-обратный канал для `roots/list`, sampling и elicitation. На такой сессии они вернут
-`-32601` или «no back-channel» — это ответ сервера, а не сбой инспектора. Чтобы их
-проверить, зафиксируйте `2025-11-25` или старше.
+Keep in mind that revision `2026-07-28` removed a few methods: `ping`, `resources/subscribe`
+and the back-channel for `roots/list`, sampling and elicitation. On such a session they return
+`-32601` or "no back-channel" — that is the server's answer, not an inspector failure. To
+exercise them, pin `2025-11-25` or older.
 
-Кнопка **Ping** на такой сессии прячется: слать её значило бы гарантированно получить
-`-32601`. Признак — эра согласованной ревизии, а не строка `2026-07-28`, так что следующая
-modern-версия учтётся сама; незнакомая версия кнопку не убирает — лучше отправить и
-посмотреть на ответ сервера. Сам метод остаётся доступен во вкладке Raw request, если
-нужно увидеть именно отказ.
+The **Ping** button hides itself on such a session: sending it would be a guaranteed `-32601`.
+The trigger is the era of the negotiated revision, not the literal string `2026-07-28`, so the
+next modern version is handled on its own; an unknown version keeps the button — better to send
+it and look at what the server says. The method itself stays reachable from the Raw request tab
+if the refusal is precisely what you want to see.
 
-**Заголовки.** Редактор «ключ → значение» с чекбоксом на каждую строку, плюс отдельный блок
-аутентификации: имя заголовка (по умолчанию `Authorization`), схема (`Bearer`) и токен.
-Итоговый набор виден в статусе соединения (`sent_headers`) и в HTTP-логе, где секреты
-маскируются как `<N chars hidden>`.
+**Headers.** A key → value editor with a checkbox per row, plus a separate authentication block:
+header name (`Authorization` by default), scheme (`Bearer`) and token. The resulting set is
+visible in the connection status (`sent_headers`) and in the HTTP log, where secrets are masked
+as `<N chars hidden>`.
 
-У каждой строки заголовка есть выбор формата значения: `Fixed` (набрано руками) или UUID
-v1, v4, v7. С выбранным форматом кнопка ⟳ в строке выдаёт новое значение — удобно для
-`X-Request-Id` и прочих идентификаторов, которые надо менять от запроса к запросу. Значение
-подставляется сразу, если строка была пустой, и при переключении между версиями UUID —
-иначе селектор говорил бы «v7», а в поле лежал бы v4; уже набранное руками не затирается,
-пока не нажать ⟳. Версии v3 и v5 не предлагаются намеренно: это хеш от пары «пространство имён +
-имя», то есть «обновление» вернуло бы ту же строку, а v2 (DCE) требует POSIX-uid, которого
-у браузера нет. Генерация целиком браузерная, значение уходит на сервер обычной строкой;
-выбранный формат сохраняется в пресете, но в `mcpServers`-экспорт не попадает — экспорт
-об этом прямо говорит.
+Each header row has a value format: `Fixed` (typed by hand) or UUID v1, v4, v7. With a format
+selected, the ⟳ button in the row mints a new value — handy for `X-Request-Id` and other
+identifiers that have to change from request to request. The value is filled in immediately if
+the row was empty, and when switching between UUID versions — otherwise the selector would say
+"v7" while the field held a v4; anything typed by hand is left alone until you press ⟳. v3 and
+v5 are deliberately not offered: they are a hash of a namespace plus a name, so "refreshing"
+would hand back the same string, and v2 (DCE) needs a POSIX uid, which a browser does not have.
+Generation happens entirely in the browser and the value travels to the server as an ordinary
+string; the chosen format is kept in the preset but does not survive an `mcpServers` export —
+the export says so out loud.
 
-**Сайдбар.** Кнопка ☰ слева в шапке убирает его с экрана и возвращает обратно, границу
-между ним и рабочей областью можно тащить мышью или двигать стрелками ←/→, когда она в
-фокусе (Tab до неё доходит). Ширина и скрытость запоминаются в браузере, ширина
-подрезается под окно, если оно оказалось уже. Скрытый сайдбар не исчезает из формы:
-поля остаются в DOM, и Connect уходит с той же конфигурацией.
+**Sidebar.** The ☰ button on the left of the header pushes it off screen and back, and the
+border between it and the work area can be dragged with the mouse or moved with ←/→ when it has
+focus (Tab reaches it). Width and hidden state are remembered in the browser, and the width is
+clamped to the window if the window turns out to be narrower. A hidden sidebar does not leave
+the form: the fields stay in the DOM and Connect goes out with the same configuration.
 
-**Скрипт для токена.** В блоке Authentication можно указать путь к своему Python-скрипту
-и аргументы к нему. Кнопка **Get token** запускает его и кладёт напечатанное в поле Token,
-а на живой сессии сразу применяет (тем же `POST /api/auth`, без реконнекта). Connect с
-заданным скриптом сначала запускает его и только потом подключается: токен, добытый после
-хендшейка, — это уже не тот токен, с которым хендшейк прошёл.
+**A script for the token.** The Authentication block takes a path to a script of yours: the
+**Get token** button runs it and puts what it printed into the Token field, and Connect runs it
+before it connects. The contract, the examples and what the log says about a run are in
+[Token scripts](#token-scripts) below.
 
-Контракт тонкий, потому что инспектор о скрипте не знает ничего, кроме пути:
+**Refreshing the token without reconnecting.** A token lives on the server's schedule, not the
+session's, and reconnecting for the sake of a fresh one throws away the handshake, the
+`mcp-session-id` and everything attached to it. So an edited token is applied on its own: change
+the Token, the Scheme or the header name on a live HTTP session, and once the field goes quiet
+the inspector swaps the credential on the HTTP clients the transport is already using. httpx
+merges `client.headers` into every request as it is being built, so the new value goes out
+starting with the next request while the session stays the same. There is no Apply button to
+press: a credential sitting in the form but not going out is exactly the confusion this
+inspector exists to remove.
 
-| Что | Как |
-|---|---|
-| аргументы | из поля **Script arguments**, разбираются как в оболочке |
-| контекст | переменные `PYMCPINSPECTOR_URL`, `_TRANSPORT`, `_AUTH_HEADER`, `_SCHEME` плюс всё окружение инспектора |
-| ответ | **stdout**: голый токен или JSON `{"token": …, "scheme"?: …, "header"?: …}` |
-| диагностика | **stderr** — каждая строка попадает в журнал, и при успехе, и при провале |
-| провал | ненулевой код возврата; последние строки stderr становятся текстом ошибки |
+An empty token simply stops the header being sent, and renaming the header removes the old name
+so two variants never travel side by side. Nothing is sent while the inspector is idle — the
+field is then just the credential the next Connect will carry — and a value identical to what
+the session already has costs no request. What actually happened is in the log:
+`Authorization replaced (20 chars); in effect from the next request`.
 
-Скрипт запускается **отдельным процессом**, а не импортируется: скрипту обычно нужны
-библиотеки, которых нет в окружении инспектора, зависший процесс надо уметь убить
-(таймаут — 60 секунд), а упавший не должен ронять инспектор. Исполняемый файл запускается
-сам собой — так шебанг может указывать на нужный venv; всё остальное отдаётся тому же
-интерпретатору, на котором работает инспектор. Точная команда пишется в журнал, вместе с
-тем, что инспектор решил за скрипт: какую строку stdout счёл токеном, какие ключи JSON
-проигнорировал. Сам токен в журнал не попадает — только его длина.
+Worth remembering: an SSE stream opened earlier was authenticated when it was opened and carries
+on with the old token — whether to extend it is the server's call. A line about that goes to the
+Log. For stdio nothing is applied: a child process's environment is fixed at launch.
 
-Текущий токен скрипту **не передаётся**: тому, кто печатает новый, старый не нужен. Права
-у скрипта те же, что у инспектора, — это тот же уровень доверия, что и у `command` в
-stdio-транспорте, который инспектор тоже запускает как есть. В пресете сохраняются путь и
-аргументы (не секрет), сам токен — никогда.
-
-Два примера: [examples/token_plugin.py](examples/token_plugin.py) проходит все ветки
-контракта (голый токен, JSON с заголовком и схемой, провал) и работает без сети —
-с ним удобно проверить, что кнопка вообще делает. [examples/oauth_token_plugin.py](examples/oauth_token_plugin.py)
-показывает форму, из-за которой токен и приходится добывать скриптом: пароль меняется на
-токен пользователя, тот — на токен агента для нужной audience, а заголовок с идентификатором
-сотрудника задаётся аргументом и меняется правкой одного поля. Секретов в нём нет, они
-берутся из окружения инспектора.
-
-**Обновление токена без реконнекта.** Токен живёт по расписанию сервера, а не сессии, и
-переподключение ради свежего токена выбрасывает и хендшейк, и `mcp-session-id`, и всё,
-что за ним числится. Кнопка **Apply to live session** в блоке аутентификации (и
-`POST /api/auth`) подменяет заголовок на тех HTTP-клиентах, которые транспорт уже
-использует: httpx подмешивает `client.headers` в каждый запрос в момент его сборки,
-поэтому новое значение уходит начиная со следующего запроса, а сессия остаётся та же.
-Менять можно и схему с именем заголовка — старое имя при этом снимается, чтобы два
-варианта не уходили рядом; пустой токен просто перестаёт его отправлять.
-
-Что важно помнить: SSE-стрим, открытый раньше, был аутентифицирован при открытии и
-продолжает жить со старым токеном — продлевать его или нет, решает сервер. Об этом
-пишется строка в Log. Для stdio кнопка недоступна: окружение дочернего процесса
-фиксируется при запуске.
-
-Из скрипта — тем же одним запросом, например по таймеру рядом с выдающим токен сервисом:
+From a script it is a single request, e.g. on a timer next to the service that issues tokens:
 
 ```bash
 curl -s localhost:6288/api/auth \
@@ -132,167 +113,339 @@ curl -s localhost:6288/api/auth \
      -d "{\"token\": \"$(get-my-token)\"}"
 ```
 
-**Пресеты.** Сохранённое подключение можно не только загрузить, но и править на месте.
-Выбранный пресет подставляется в сайдбар; как только форма от него отличается, в заголовке
-секции загорается чип `edited`, и **Save** перезаписывает именно его — без диалога с именем.
-**Save as…** кладёт форму под другим именем (то есть делает копию), **Rename** переносит
-пресет на новое имя, **Delete** удаляет. Кнопки, работающие с выбранным пресетом, выключены,
-пока ничего не выбрано.
+**Presets.** A saved connection can be edited in place, not just loaded. The selected preset is
+filled into the sidebar; as soon as the form differs from it, an `edited` chip lights up in the
+section header, and **Save** overwrites that very preset — no name dialog. **Save as…** stores
+the form under a different name (that is, makes a copy), **Rename** moves the preset to a new
+name, **Delete** removes it. Buttons that act on the selected preset stay disabled while nothing
+is selected.
 
-**Токен в пресет не попадает.** Ни из поля Token, ни строкой `Authorization` в списке
-заголовков: при записи обе обнуляются (`store.without_auth_secret`). Причина простая —
-пресет переживает токен: токен выписывают на часы, пресет хранят месяцами, так что на
-диске остался бы живой секрет, а при следующей загрузке — протухшее значение. Имя
-заголовка и схема сохраняются: они не секрет и как раз говорят, что именно заполнять.
-Сама строка `Authorization` в списке тоже остаётся — с пустым значением, чтобы было
-видно, что сервер её ждёт.
+**The token never reaches a preset.** Neither from the Token field nor as an `Authorization`
+row in the header list: both are blanked on write (`store.without_auth_secret`). The reason is
+simple — a preset outlives a token: tokens are issued for hours, presets are kept for months, so
+a live secret would sit on disk and the next load would hand you a stale value. The header name
+and the scheme are kept: they are not secret, and they are exactly what tells you what to fill
+in. The `Authorization` row itself stays in the list too — with an empty value, so that it is
+visible that the server expects it.
 
-Практика: выбрали пресет → вставили токен → Connect. Вставленный токен не считается
-несохранённым изменением, чип `edited` на него не загорается. Правило работает на записи,
-поэтому оно же распространяется на импорт `mcpServers`-блока с заголовком `Authorization`.
-Остальные секреты (пароль к ключу, `X-Api-Key`, переменные окружения) в файл пресетов
-по-прежнему пишутся как есть — вычищаются только при экспорте, см. ниже.
+In practice: pick a preset → paste the token → Connect. A pasted token does not count as an
+unsaved change, the `edited` chip does not light up for it. The rule lives on the write path, so
+it covers importing an `mcpServers` block with an `Authorization` header as well. Other secrets
+(a key passphrase, `X-Api-Key`, environment variables) are still written to the presets file as
+they are — they are only stripped on export, see below.
 
-**Поделиться пресетом.** Кнопка **Share…** (и `POST /api/servers/export`) отдаёт JSON —
-один пресет или все сразу, в одном из двух форматов:
+**Sharing a preset.** The **Share…** button (and `POST /api/servers/export`) hands you JSON —
+one preset or all of them, in one of two formats:
 
-| Формат | Что внутри |
+| Format | What is inside |
 |---|---|
-| Inspector JSON | всё целиком: TLS, таймауты, версия протокола, roots — ровно то, что читает импорт этого же инспектора |
-| mcpServers JSON | блок в стиле Claude Desktop / VS Code: переносимо, но доезжает только то, что понимают те клиенты |
+| Inspector JSON | everything: TLS, timeouts, protocol version, roots — exactly what this inspector's import reads |
+| mcpServers JSON | a Claude Desktop / VS Code style block: portable, but only what those clients understand survives |
 
-Во втором случае диалог честно перечисляет, что не поместилось (`prod: verify_tls,
-prod: request_timeout`). Токен там кладётся прямо в `headers`, потому что отдельного поля
-для учётки в `mcpServers` нет.
+In the second case the dialog honestly lists what did not fit (`prod: verify_tls,
+prod: request_timeout`). The token goes straight into `headers` there, because `mcpServers` has
+no separate field for credentials.
 
-**Секреты по умолчанию вычищаются.** Всегда — поля Token и Key passphrase (первое к этому
-моменту и так пусто); из заголовков и
-переменных окружения — те, чьё *имя* похоже на секрет (`authorization`, `token`, `secret`,
-`password`, `api-key`, `cookie`, …). Имена при этом остаются, стирается только значение:
-получатель должен видеть, что именно ему предстоит заполнить. По той же причине в portable-
-формате заголовок `Authorization` остаётся с пустым значением, а не исчезает — иначе это
-читалось бы как «серверу авторизация не нужна». Что именно вычищено, перечисляется под
-текстом; галка **Include tokens and passphrases** отключает вычистку целиком, и тогда там
-же появляется предупреждение.
+![The Share presets dialog: an mcpServers block, with the blanked X-Api-Key and the dropped protocol_version listed underneath](docs/screenshots/share-presets.jpg)
 
-Эвристика по именам — именно эвристика: `X-Trace-Id` уцелеет, `X-Api-Key` нет. Поэтому список
-вычищенного показывается всегда, а не предлагается принять на веру.
+**Secrets are stripped by default.** Always — the Token and Key passphrase fields (the first of
+which is empty by this point anyway); out of the headers and the environment variables — those
+whose *name* looks like a secret (`authorization`, `token`, `secret`, `password`, `api-key`,
+`cookie`, …). The names stay, only the value is wiped: whoever receives this has to see what
+they are expected to fill in. For the same reason the `Authorization` header stays in the
+portable format with an empty value instead of disappearing — otherwise it would read as "this
+server needs no authorization". What exactly was stripped is listed under the text; the
+**Include tokens and passphrases** checkbox turns stripping off entirely, and a warning appears
+in the same place.
 
-**TLS.** Отдельный блок в сайдбаре (для HTTP-транспортов). Секции **Advanced** и **TLS**
-свёрнуты по умолчанию — щелчок по заголовку (или Enter/Space с клавиатуры) разворачивает
-их, и выбор запоминается в браузере. Пока секция свёрнута, в её заголовке висит чип с тем,
-что внутри отличается от умолчаний — например `no verify · custom CA · client cert` или
-`2024-11-05 · log debug`; пароль к ключу туда не попадает.
+The name heuristic is exactly that, a heuristic: `X-Trace-Id` survives, `X-Api-Key` does not.
+That is why what was stripped is always listed, rather than offered on trust.
 
+**TLS.** Its own block in the sidebar for the HTTP transports: a custom CA, a client
+certificate for mTLS, a passphrase for an encrypted key, and a switch that turns verification off
+altogether. The fields, the errors they produce and a throwaway CA to try them against are in
+[TLS and mTLS](#tls-and-mtls) below.
 
+**Working with the server.** Connecting asks only for `tools/list`; resources and prompts are
+listed the first time their tab is opened and cached from then until a reconnect (the **List**
+button refreshes by hand, `notifications/*/list_changed` refreshes only lists that are already
+open). Switching presets or disconnecting clears the catalog.
 
-| Поле | Что делает |
-|---|---|
-| Verify the server certificate | снятая галка отключает проверку целиком |
-| CA certificate | путь к PEM-файлу или к каталогу (`capath`); **заменяет** системное хранилище, как `curl --cacert` |
-| Client certificate | клиентский сертификат для mTLS |
-| Client key | приватный ключ; можно не указывать, если он лежит в том же файле |
-| Key passphrase | пароль к зашифрованному ключу |
+- `tools/list`, `tools/call` — the argument form is built from `inputSchema` (enum → select,
+  boolean → select, object/array → JSON field), with a switch to raw JSON; progress and logs
+  during the call show up in the bottom panel
+- `resources/list`, `resources/templates/list`, `resources/read` — variable substitution into
+  the URI template, `subscribe` / `unsubscribe`
+- `prompts/list`, `prompts/get` — with arguments
+- `ping`, `logging/setLevel`, `completion/complete` (availability depends on the protocol version)
+- **Raw request** — any JSON-RPC method with arbitrary params
+- **Roots** — the list of roots the client serves on `roots/list`, with a notification to the server
+- **Server requests** — incoming `sampling/createMessage` and `elicitation/create`: the
+  elicitation form is built from `requestedSchema`, and the answer is sent by hand
 
-Пути проверяются до подключения, так что отсутствующий файл или неверный пароль дают
-понятную ошибку (`CA bundle not found: …`, `client certificate could not be loaded: … (check
-the passphrase)`), а не таймаут. Активный набор виден в панели Server после подключения.
+**Watching the wire.** A bottom panel with tabs: all JSON-RPC traffic in both directions
+(intercepted at the transport level, not scraped from SDK logs), the HTTP exchange (method, URL,
+status, headers), notifications, `notifications/message` from the server, and the child
+process's stderr for stdio.
 
-Одна тонкость, ради которой это сделано именно так: `httpx` объявил устаревшими и
-`verify=<путь>`, и `cert=`, поэтому инспектор собирает `ssl.SSLContext` сам. Пароль к ключу
-всегда передаётся в `load_cert_chain` явно (пустой строкой, если не задан) — иначе OpenSSL
-запросил бы его интерактивно в терминале и подвесил сервер.
+![The log panel with an HTTP entry expanded, showing the request headers exactly as httpx sent them](docs/screenshots/log-http.jpg)
 
-**Работа с сервером.** При подключении запрашивается только `tools/list`; ресурсы и промпты
-перечисляются при первом открытии своей вкладки, а дальше кешируются до переподключения
-(кнопка **List** обновляет вручную, `notifications/*/list_changed` — только уже открытые
-списки). Смена пресета или отключение очищают каталог.
+**Errors.** The **Errors** tab collects everything that went wrong, whatever kind of event it
+was: JSON-RPC errors and the inspector's own refusals (`kind: "error"`), transport errors and
+warnings, server logs at level `error` and above. The counter on the tab shows how many have
+piled up since the last clear. It also catches what the backend never sees: an unreachable
+inspector, invalid JSON in the arguments, a broken event stream and any exception in the UI
+itself. Everything the backend logs is mirrored into the process output (`--log-level`).
 
-- `tools/list`, `tools/call` — форма аргументов строится по `inputSchema` (enum → select,
-  boolean → select, object/array → JSON-поле), есть переключатель на сырой JSON;
-  прогресс и логи во время вызова видны в нижней панели
-- `resources/list`, `resources/templates/list`, `resources/read` — подстановка переменных
-  в URI-шаблон, `subscribe` / `unsubscribe`
-- `prompts/list`, `prompts/get` — с аргументами
-- `ping`, `logging/setLevel`, `completion/complete` (доступность зависит от версии протокола)
-- **Raw request** — любой JSON-RPC метод с произвольными params
-- **Roots** — список корней, который клиент отдаёт по `roots/list`, с уведомлением сервера
-- **Server requests** — входящие `sampling/createMessage` и `elicitation/create`:
-  форма для elicitation строится по `requestedSchema`, ответ отправляется вручную
+![A failing tool call: the result is marked isError and the Errors tab counter goes up](docs/screenshots/tool-error.jpg)
 
-**Наблюдение.** Нижняя панель с вкладками: весь JSON-RPC-трафик в обе стороны (перехват на
-уровне транспорта, а не логов SDK), HTTP-обмен (метод, URL, статус, заголовки),
-нотификации, `notifications/message` от сервера и stderr дочернего процесса для stdio.
+**Presets.** Named configurations in `~/.pymcpinspector/servers.json`, plus importing an
+`mcpServers` block from Claude Desktop / VS Code configs.
 
-**Ошибки.** Вкладка **Errors** собирает всё, что пошло не так, независимо от вида события:
-ошибки JSON-RPC и отказы самого инспектора (`kind: "error"`), ошибки и предупреждения
-транспорта, серверные логи уровня `error` и выше. Счётчик на вкладке показывает, сколько
-их накопилось с последней очистки. Туда же попадает то, чего бэкенд не видит: недоступный
-инспектор, невалидный JSON в аргументах, обрыв потока событий и любое исключение в самом UI.
-Всё, что логирует бэкенд, дублируется в вывод процесса (`--log-level`).
-
-**Пресеты.** Именованные конфигурации в `~/.pymcpinspector/servers.json`, плюс импорт блока
-`mcpServers` из конфигов Claude Desktop / VS Code.
-
-## Запуск
+## Running
 
 ```
 pymcpinspector [--host 127.0.0.1] [--port 6288] [--config PATH] [--no-browser]
                [--log-level warning]
 ```
 
-Или без установки: `python -m pymcpinspector`.
+Or without installing: `python -m pymcpinspector`.
 
-Путь к файлу пресетов можно задать и через `PYMCPINSPECTOR_CONFIG`.
+The path to the presets file can also be set through `PYMCPINSPECTOR_CONFIG`.
 
-## Демо-сервер
+## Demo server
 
-В `examples/demo_server.py` лежит MCP-сервер со всем набором возможностей — в том числе
-инструментом `show_headers`, который возвращает заголовки полученного запроса. Это самый
-быстрый способ убедиться, что редактор заголовков работает:
+`examples/demo_server.py` is an MCP server with the whole feature set — including the
+`show_headers` tool, which returns the headers of the request it received. It is the quickest
+way to convince yourself the header editor works:
 
 ```bash
 python examples/demo_server.py --transport streamable-http --port 8931
-# затем в UI: Streamable HTTP → http://127.0.0.1:8931/mcp → добавить заголовок → Connect
-#             → Tools → show_headers → Run tool
+# then in the UI: Streamable HTTP -> http://127.0.0.1:8931/mcp -> add a header -> Connect
+#                 -> Tools -> show_headers -> Run tool
 ```
 
-Остальные инструменты: `add`, `echo`, `slow_count` (прогресс + логи), `boom` (ошибка),
-`ask_user` (elicitation), `ask_model` (sampling), `show_roots`, `log_to_stderr`.
+The other tools: `add`, `echo`, `slow_count` (progress + logs), `boom` (an error), `ask_user`
+(elicitation), `ask_model` (sampling), `show_roots`, `log_to_stderr`.
 
-Демо-сервер умеет и HTTPS с обязательным клиентским сертификатом — этим удобно проверять
-блок TLS:
+It also speaks HTTPS and can demand a client certificate, which is how the TLS block is checked
+end to end — see [TLS and mTLS](#tls-and-mtls) below.
+
+## TLS and mTLS
+
+The TLS block sits in the sidebar for `sse` and `streamable-http`. It, like **Advanced**, is
+collapsed by default — a click on the header (or Enter/Space from the keyboard) expands it, and
+the choice is remembered in the browser. While a section is collapsed its header carries a chip
+with whatever inside differs from the defaults, say `no verify · custom CA · client cert` or
+`2024-11-05 · log debug`; the key passphrase never goes in there.
+
+![The TLS block filled in against an HTTPS demo server, and the Server panel showing the set that is in force](docs/screenshots/tls.jpg)
+
+| Field | What it does |
+|---|---|
+| Verify the server certificate | unchecking it turns verification off entirely |
+| CA certificate | a path to a PEM file or to a directory (`capath`); it **replaces** the system store, like `curl --cacert` |
+| Client certificate | the client certificate for mTLS |
+| Client key | the private key; can be left out if it lives in the same file |
+| Key passphrase | the password for an encrypted key |
+
+Paths are checked before connecting, so a missing file or a wrong password says so instead of
+timing out somewhere in the handshake:
+
+```
+CA bundle not found: certs/nope.pem
+client certificate could not be loaded: [SSL] PEM lib (check the passphrase)
+```
+
+A certificate the trust store does not know about fails the way it should, naming the authority
+it does not trust: `ConnectError: ('"PyMCPinspector Demo CA" certificate is not trusted',)`. Once
+connected, the set that is actually in force is listed in the Server panel — including whether
+the key was encrypted — because "which certificate did this session use" is a question worth
+answering without reading the config back.
+
+One subtlety this is shaped around: `httpx` deprecated both `verify=<path>` and `cert=`, so the
+inspector builds the `ssl.SSLContext` itself. The key passphrase is always passed to
+`load_cert_chain` explicitly (as an empty string when unset) — otherwise OpenSSL would ask for it
+interactively in the terminal and hang the server.
+
+Presets keep the paths, not the certificates, so a shared preset points at files the other side
+has to have. The passphrase is stored in the presets file as plain text — and stripped on export,
+like any other secret.
+
+### Trying it against a throwaway CA
+
+The demo server speaks HTTPS and can demand a client certificate, so the whole path is checkable
+without touching anything real. Mint a CA and two certificates it signs:
+
+```bash
+mkdir certs && cd certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=Demo CA" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -keyout ca.key -out ca.pem
+openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout server.key -out server.csr
+openssl x509 -req -days 2 -in server.csr -CA ca.pem -CAkey ca.key -copy_extensions=copyall -out server.pem
+openssl req -newkey rsa:2048 -nodes -subj "/CN=inspector-client" -keyout client.key -out client.csr
+openssl x509 -req -days 2 -in client.csr -CA ca.pem -CAkey ca.key -out client.pem
+openssl rsa -in client.key -aes256 -passout pass:hunter2 -out client-enc.key   # to exercise the passphrase field
+cd ..
+```
+
+The two `-addext` lines on the CA are not decoration: OpenSSL 3 refuses to verify a chain whose
+CA carries no `keyCertSign`, and the failure reads `CA cert does not include key usage extension`
+rather than anything about the missing extension being yours to add.
+
+Then run the server with mutual TLS on and point the inspector at it:
 
 ```bash
 python examples/demo_server.py --transport streamable-http --port 8950 \
-    --ssl-certfile server.pem --ssl-keyfile server.key \
-    --ssl-ca-certs ca.pem --require-client-cert
+    --ssl-certfile certs/server.pem --ssl-keyfile certs/server.key \
+    --ssl-ca-certs certs/ca.pem --require-client-cert
 ```
 
-## Воспроизвести запрос через curl
+```
+Server URL                     https://127.0.0.1:8950/mcp
+TLS -> CA certificate          certs/ca.pem
+       Client certificate      certs/client.pem
+       Client key              certs/client-enc.key
+       Key passphrase          hunter2
+```
 
-Кнопка **curl** собирает команду, которая повторяет то, что отправляет инспектор:
-заголовки, TLS-флаги, таймауты и — на `2026-07-28` — пер-запросный конверт с
-маршрутизирующими заголовками. Она стоит рядом с каждым базовым методом:
+Connect. Dropping the CA field is the instructive failure: the server's certificate is perfectly
+valid, the system store has simply never heard of the authority that signed it. Unchecking
+**Verify the server certificate** gets past it, which is also what puts `--insecure` in the
+rendered `curl` command and `no verify` in the section's chip.
 
-| Откуда | Метод | Что подставляется |
+## Token scripts
+
+The inspector has no OAuth flow and does not want one: every shop mints tokens its own way. What
+it has instead is a hook — a script of yours that prints a credential, which the inspector runs
+and uses. Fill in **Token script** (and **Script arguments**) in the Authentication block, and:
+
+- **Get token** runs it and puts what it printed in the Token field — applying it to a live
+  session straight away;
+- **Connect** runs it first and connects with what it printed, because a token minted after the
+  handshake is not the token the handshake was made with.
+
+![The Authentication block with a token script, and the log showing two runs of it](docs/screenshots/token-plugin.jpg)
+
+The screenshot above is the whole loop: the script ran twice, once plain and once with `--json`,
+and the second run also moved the credential from `Authorization` to `X-Api-Key` — which is why
+the Scheme field went empty and the header name changed by itself.
+
+### The contract
+
+The inspector knows nothing about the script beyond its path, so the contract is thin:
+
+| What | How |
+|---|---|
+| arguments | from the **Script arguments** field, split the way a shell would |
+| context | `PYMCPINSPECTOR_URL`, `PYMCPINSPECTOR_TRANSPORT`, `PYMCPINSPECTOR_AUTH_HEADER`, `PYMCPINSPECTOR_AUTH_SCHEME`, plus the inspector's own environment |
+| answer | **stdout**: a bare token, or JSON `{"token": …, "scheme"?: …, "header"?: …}` |
+| diagnostics | **stderr** — every line lands in the log, on success as well as on failure |
+| failure | a non-zero exit code; the last stderr lines become the error text |
+
+The shortest thing that satisfies it:
+
+```python
+#!/usr/bin/env python3
+import os, sys, urllib.request, json
+
+print(f"minting for {os.environ['PYMCPINSPECTOR_URL']}", file=sys.stderr)   # goes to the log
+print(json.load(urllib.request.urlopen(os.environ["TOKEN_ENDPOINT"]))["access_token"])
+```
+
+The object form is for a server that wants the credential somewhere else entirely — an API key
+rather than a bearer token:
+
+```python
+json.dump({"token": token, "scheme": "", "header": "X-Api-Key"}, sys.stdout)
+```
+
+The inspector then moves the Scheme and Header name fields to match, so the sidebar keeps showing
+what is actually being sent. Keys it does not know are ignored, and it says which ones in the log.
+
+### Running, and what shows up in the log
+
+The script is run as a **separate process** rather than imported: a script usually needs
+libraries the inspector's environment does not have, a hung process has to be killable (the
+timeout is 60 seconds), and a crashing one must not take the inspector down with it. An
+executable file is run as itself — that way its shebang can point at the right venv; everything
+else is handed to the same interpreter the inspector runs on.
+
+The log gets the exact command, every line the script wrote to stderr, and what the inspector
+decided on the script's behalf — which stdout line it took for the token, which JSON keys it
+ignored. The token itself never reaches the log, only its length:
+
+```
+PLUGIN     running examples/token_plugin.py --profile prod --json
+PLUGIN     stderr: minting a prod token for http://127.0.0.1:8931/mcp
+PLUGIN     got a 20-character token in 0.1s
+TRANSPORT  X-Api-Key replaced (20 chars); in effect from the next request
+TRANSPORT  the SSE stream opened earlier still carries the previous credential
+```
+
+The current token is **not** passed to the script: whoever mints a new one has no use for the old
+one. The script runs with the inspector's own rights — the same level of trust as the `command`
+of the stdio transport, which the inspector also runs as given. A preset keeps the path and the
+arguments (they are not a secret); the token, never.
+
+### The two examples
+
+[examples/token_plugin.py](examples/token_plugin.py) walks through every branch of the contract
+and needs no network, so it is the one to try first:
+
+```bash
+python examples/demo_server.py --transport streamable-http --port 8931
+pymcpinspector
+# in the UI: Streamable HTTP -> http://127.0.0.1:8931/mcp
+#            Token script    -> examples/token_plugin.py
+#            Script arguments -> --profile prod
+#            Connect -> Get token -> Tools -> show_headers -> Run tool
+```
+
+`show_headers` then echoes the header the script produced, which is the proof the loop closed.
+Its arguments are the branches: `--profile NAME` picks what to mint, `--json` answers with the
+object form (and moves the credential to `X-Api-Key`), `--fail` exits non-zero so you can see
+what a failure looks like — it leaves the Token field alone and says why.
+
+[examples/oauth_token_plugin.py](examples/oauth_token_plugin.py) is the shape that makes a script
+necessary in the first place: a password is exchanged for a user token, that one for an agent
+token for the right audience, and the header carrying the employee id is an argument you change
+in one field. It holds no secrets — those come from the inspector's environment:
+
+```bash
+export IDP_URL=https://idp.example.com IDP_USER=svc-inspector IDP_PASSWORD=…
+# Token script      -> examples/oauth_token_plugin.py
+# Script arguments  -> --audience mcp-prod --employee 4815162342
+```
+
+## Reproducing a request with curl
+
+The **curl** button assembles a command that repeats what the inspector sends: headers, TLS
+flags, timeouts and — on `2026-07-28` — the per-request envelope with its routing headers. It
+sits next to every basic method:
+
+| Where | Method | What is filled in |
 |---|---|---|
-| тулбар вкладки Tools | `tools/list` | — |
-| тулбар вкладки Resources | `resources/list` | — |
-| тулбар вкладки Prompts | `prompts/list` | — |
-| панель инструмента | `tools/call` | имя и заполненные аргументы |
-| панель ресурса | `resources/read` | разрешённый URI |
-| панель промпта | `prompts/get` | имя и заполненные аргументы |
-| вкладка Raw request | любой | что набрано в полях |
+| Tools tab toolbar | `tools/list` | — |
+| Resources tab toolbar | `resources/list` | — |
+| Prompts tab toolbar | `prompts/list` | — |
+| tool panel | `tools/call` | the name and the arguments you filled in |
+| resource panel | `resources/read` | the resolved URI |
+| prompt panel | `prompts/get` | the name and the arguments you filled in |
+| Raw request tab | anything | whatever is typed in the fields |
 
-В самом диалоге есть селектор метода: он переключает между беспараметрическими
-(`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, `ping`), так что
-`resources/templates/list`, у которого своей кнопки нет, доступен оттуда. Параметры
-принадлежат методу, для которого их собрали, — при переключении они не переносятся,
-а при возврате подставляются обратно. `ping` не предлагается на сессии, которая его
-лишилась, по тому же правилу, что прячет кнопку Ping.
+![The Copy as curl dialog for tools/call on the 2026-07-28 revision](docs/screenshots/curl.jpg)
 
-Пример на живой сессии:
+The dialog itself has a method selector: it switches between the parameterless ones
+(`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, `ping`), which is
+how `resources/templates/list` — the one with no button of its own — is reachable. Parameters
+belong to the method they were collected for: they are not carried across a switch, and they
+come back when you switch back. `ping` is not offered on a session that lost it, by the same
+rule that hides the Ping button.
+
+An example from a live session:
 
 ```
 curl -sS -X POST http://127.0.0.1:8931/mcp \
@@ -308,226 +461,234 @@ curl -sS -X POST http://127.0.0.1:8931/mcp \
        "arguments": {"a": 19, "b": 23}, "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", …}}}'
 ```
 
-Что именно тут «особенности протокола»:
+Which parts of that are "protocol specifics":
 
-| Ревизия | Что добавляется |
+| Revision | What is added |
 |---|---|
-| `2024-11-05` … `2025-11-25` | `mcp-session-id`, выданный сервером на `initialize`; тела запросов обычные |
-| `2026-07-28` | конверт `params._meta` (`protocolVersion`, `clientCapabilities`, `clientInfo`) плюс маршрутизирующие `mcp-method`, `mcp-name` и, для `tools/call`, `Mcp-Param-*` |
+| `2024-11-05` … `2025-11-25` | the `mcp-session-id` the server handed out on `initialize`; request bodies are ordinary |
+| `2026-07-28` | the `params._meta` envelope (`protocolVersion`, `clientCapabilities`, `clientInfo`) plus the routing `mcp-method`, `mcp-name` and, for `tools/call`, `Mcp-Param-*` |
 
-Без маршрутизирующих заголовков современный сервер отвечает `-32020
-«mcp-method header does not match the request body's method»` — команда без них
-выглядит правдоподобно и не работает, поэтому тест в `test_curl.py` не проверяет текст,
-а реально запускает полученную строку через `bash` и сверяет ответ сервера.
+Without the routing headers a modern server answers `-32020 "mcp-method header does not match
+the request body's method"` — a command without them looks plausible and does not work, which is
+why the test in `test_curl.py` does not check the text but actually runs the resulting string
+through `bash` and compares the server's answer.
 
-`clientCapabilities` и `Mcp-Param-*` берутся из живой сессии: первые собирает
-`ClientSession`, вторые объявляет схема инструмента, известная только после `tools/list`.
-Без подключения их подставить неоткуда — тогда об этом пишется в примечаниях под командой,
-а не подсовывается пустое значение под видом правды. Там же перечисляется всё остальное,
-что не воспроизводится дословно: отсутствующий `mcp-session-id`, заголовок из редактора,
-который транспорт всё равно переопределит, `--insecure`, и то, что ответ может прийти
-SSE-потоком, а не JSON.
+`clientCapabilities` and `Mcp-Param-*` come from the live session: the first are assembled by
+`ClientSession`, the second are declared by the tool's schema, which is only known after
+`tools/list`. With no connection there is nowhere to take them from — then that is stated in the
+notes under the command, instead of an empty value being passed off as the truth. The same notes
+list everything else that is not reproduced verbatim: a missing `mcp-session-id`, a header from
+the editor that the transport will override anyway, `--insecure`, and the fact that the response
+may arrive as an SSE stream rather than JSON.
 
-**Секреты по умолчанию заменяются переменными окружения** — `-H "Authorization: Bearer
-$MCP_AUTHORIZATION"`, `--pass "$MCP_KEY_PASSPHRASE"`. Схема (`Bearer`) остаётся видимой,
-она не секрет. Список переменных, которые надо выставить, идёт первой строкой примечаний;
-галка **Include tokens and passphrases** подставляет значения как есть.
+**Secrets are replaced with environment variables by default** — `-H "Authorization: Bearer
+$MCP_AUTHORIZATION"`, `--pass "$MCP_KEY_PASSPHRASE"`. The scheme (`Bearer`) stays visible, it is
+not a secret. The list of variables you have to set is the first line of the notes; the
+**Include tokens and passphrases** checkbox substitutes the values as they are.
 
-Для `stdio` кнопка отвечает отказом: JSON-RPC там идёт по пайпам дочернего процесса,
-и curl не с чем разговаривать. Для `sse` адрес для POST объявляет сам сервер на стриме —
-инспектор достаёт его из своего HTTP-лога, поэтому команда получится после первого же
-запроса, а до него в примечаниях написано, почему URL стрима POST не примет.
+For `stdio` the button refuses: JSON-RPC there goes over the child process's pipes, and curl has
+nothing to talk to. For `sse` the address to POST to is announced by the server on the stream —
+the inspector digs it out of its own HTTP log, so the command works after the very first
+request, and before that the notes explain why the stream URL will not accept a POST.
 
 ## HTTP API
 
-UI — обычный клиент к своему же REST API, так что инспектор можно использовать и из скриптов:
+The UI is an ordinary client of its own REST API, so the inspector can be driven from scripts
+too:
 
-| Метод | Путь | |
+| Method | Path | |
 |---|---|---|
-| POST | `/api/connect` | тело — конфигурация подключения |
+| POST | `/api/connect` | body — the connection configuration |
 | POST | `/api/disconnect` | |
-| GET | `/api/status` | состояние, capabilities, отправленные заголовки |
-| POST | `/api/auth` | `{"token", "scheme"?, "header"?}` — сменить учётку на живом соединении |
+| GET | `/api/status` | state, capabilities, the headers that were sent |
+| POST | `/api/auth` | `{"token", "scheme"?, "header"?}` — swap the credentials on a live connection |
+| POST | `/api/auth/plugin` | body — the connection configuration; runs its token script → `{token, scheme, header, notes}` |
 | POST | `/api/tools/list` · `/api/tools/call` | |
 | POST | `/api/resources/list` · `/templates/list` · `/read` · `/subscribe` | |
 | POST | `/api/prompts/list` · `/api/prompts/get` | |
 | POST | `/api/ping` · `/api/logging/level` · `/api/complete` | |
-| POST | `/api/request` | произвольный JSON-RPC метод |
+| POST | `/api/request` | an arbitrary JSON-RPC method |
 | POST | `/api/roots` · `/api/pending/{id}` | |
-| GET | `/api/history?kinds=message,http,log,error` | журнал событий |
-| GET/POST/DELETE | `/api/servers` | пресеты (POST с существующим именем — правка на месте) |
-| POST | `/api/servers/{name}/rename` | `{"name": "новое"}` |
+| GET | `/api/history?kinds=message,http,log,error` | the event log |
+| GET/POST/DELETE | `/api/servers` | presets (POST with an existing name edits in place) |
+| POST | `/api/servers/{name}/rename` | `{"name": "new one"}` |
 | POST | `/api/servers/export` | `{"names"?, "portable"?, "include_secrets"?}` → `{json, redacted, dropped}` |
 | POST | `/api/curl` | `{"method", "params"?, "mask_secrets"?}` → `{command, notes, masked}` |
-| WS | `/ws` | поток событий |
+| WS | `/ws` | the event stream |
 
-Ошибки JSON-RPC возвращаются как `200 {"error": {"kind": "mcp", "code", "message", "data"}}` —
-ошибка сервера это результат осмотра, а не сбой инспектора. Ошибки самого инспектора — это
-`4xx` с тем же полем `error`. Любой такой ответ дополнительно публикуется в шину событий как
-`{"kind": "error", "reason", "source", "text", "detail"}`, так что в журнале видно и то, что
-вызывающий код молча проглотил.
+JSON-RPC errors come back as `200 {"error": {"kind": "mcp", "code", "message", "data"}}` — a
+server error is a finding, not an inspector failure. The inspector's own errors are `4xx` with
+the same `error` field. Any such answer is additionally published on the event bus as
+`{"kind": "error", "reason", "source", "text", "detail"}`, so the log also shows what the calling
+code swallowed in silence.
 
-Интерактивная схема: `http://127.0.0.1:6288/api/docs`.
+Interactive schema: `http://127.0.0.1:6288/api/docs`.
 
-## Устройство
+## How it is put together
 
 ```
 pymcpinspector/
-  models.py       конфигурация подключения (pydantic)
-  transports.py   открытие stdio / sse / streamable-http, TLS-контекст, httpx-хуки, stderr
-  tap.py          обёртки над потоками транспорта — источник JSON-RPC-лога
-  curl.py         рендер запроса в команду curl: заголовки, TLS, конверт 2026-07-28
-  connection.py   фоновая задача с ClientSession; согласование версии, операции, sampling/elicitation
-  events.py       шина событий и кольцевой буфер истории
+  models.py       connection configuration (pydantic)
+  transports.py   opening stdio / sse / streamable-http, TLS context, httpx hooks, stderr
+  tap.py          wrappers around the transport's streams — the source of the JSON-RPC log
+  curl.py         rendering a request as a curl command: headers, TLS, the 2026-07-28 envelope
+  connection.py   the background task holding ClientSession; version negotiation, operations, sampling/elicitation
+  events.py       the event bus and the ring buffer of history
   app.py          FastAPI: REST + WebSocket
-  store.py        пресеты на диске
-  static/         UI (без сборки: html + css + js)
+  store.py        presets on disk
+  static/         the UI (no build step: html + css + js)
 tests/
-  test_packaging.py  dev-инструменты не ставятся вместе с пакетом; requirements не отстал
-  test_inspector.py  API, транспорты, версии протокола
-  test_tls.py        TLS-контекст и настоящий mTLS против HTTPS-сервера
-  test_auth_refresh.py  подмена токена на живом соединении (streamable-http и sse)
-  test_presets.py    правка, переименование и экспорт пресетов; вычистка секретов
-  test_curl.py       рендер curl обеих эр протокола + запуск полученной команды
-  test_ui.py         запуск DOM-тестов
-  ui/                jsdom-харнесс, проверки сайдбара, пресетов, curl, каталога и журнала
+  test_packaging.py  dev tools are not installed with the package; requirements has not drifted
+  test_inspector.py  API, transports, protocol versions
+  test_tls.py        the TLS context and real mTLS against an HTTPS server
+  test_auth_refresh.py  swapping the token on a live connection (streamable-http and sse)
+  test_presets.py    editing, renaming and exporting presets; stripping secrets
+  test_curl.py       rendering curl for both protocol eras + running the resulting command
+  test_ui.py         runs the DOM tests
+  ui/                the jsdom harness, checks for the sidebar, presets, curl, catalog and log
 ```
 
-Сессия MCP живёт в одной фоновой задаче (async context manager нельзя входить и выходить
-из разных задач), а HTTP-обработчики отправляют в неё операции; поэтому долгий вызов
-инструмента не блокирует остальной интерфейс.
+The MCP session lives in a single background task (an async context manager cannot be entered
+and exited from different tasks), and the HTTP handlers post operations into it; that is why a
+long tool call does not block the rest of the interface.
 
-## Тесты
+## Tests
 
 ```
-pytest -q      # 155 тестов
+pytest -q      # 199 tests
 ruff check .
 ```
 
-Что поднимается по ходу: демо-сервер по stdio, а для TLS — по HTTPS с одноразовым CA
-(нужен `openssl` в `PATH`). Интерфейс проверяется в jsdom — `index.html` и `app.js`
-грузятся целиком, бэкенд заглушён:
+What gets started along the way: the demo server over stdio, and for TLS over HTTPS with a
+throwaway CA (needs `openssl` in `PATH`). The interface is checked in jsdom — `index.html` and
+`app.js` are loaded as they are, with the backend stubbed:
 
 ```
-cd tests/ui && npm install    # один раз
+cd tests/ui && npm install    # once
 pytest -q tests/test_ui.py
 ```
 
-Без `openssl` или без `node`/`jsdom` соответствующие тесты пропускаются, а не падают.
+Without `openssl`, or without `node`/`jsdom`, the corresponding tests are skipped rather than
+failed.
 
-## Установка падает на сборке `cryptography`
+## The install dies building `cryptography`
 
-Симптом: `pip install` начинает компилировать `cryptography` и обрывается на
-`couldn't find openssl via pkg-config` (или `Can't find Rust compiler`).
+Symptom: `pip install` starts compiling `cryptography` and breaks on `couldn't find openssl via
+pkg-config` (or `Can't find Rust compiler`).
 
-`cryptography` — не зависимость инспектора: её тянет `mcp` через `pyjwt[crypto]`, причём
-импортирует безусловно (`mcp/server/request_state.py`), так что обойтись без неё нельзя.
+`cryptography` is not a dependency of the inspector: it is pulled in by `mcp` through
+`pyjwt[crypto]`, and imported unconditionally (`mcp/server/request_state.py`), so there is no
+doing without it.
 
-**Intel Mac — самый частый случай.** С версии 49.0.0 колёса под macOS собирают только для
-arm64; для x86_64 последнее колесо (`universal2`) — у 48.0.1. Но pip всегда предпочитает
-новейшую версию: он берёт 50.x, не находит для неё готового колеса, откатывается на
-исходники и идёт собирать Rust + OpenSSL. Достаточно запретить ему сборку именно этого
-пакета — тогда он сам выберет новейшую версию с колесом:
+**An Intel Mac is the common case.** Since 49.0.0 the macOS wheels are built for arm64 only; for
+x86_64 the last wheel (`universal2`) belongs to 48.0.1. But pip always prefers the newest
+version: it takes 50.x, finds no wheel for it, falls back to the sources and goes off to build
+Rust + OpenSSL. It is enough to forbid it building that one package — it will then pick the
+newest version that has a wheel:
 
 ```bash
 pip install --only-binary=cryptography -e .
 ```
 
-Либо то же самое явно:
+Or the same thing explicitly:
 
 ```bash
 pip install "cryptography==48.0.1" && pip install -e .
 ```
 
-`pyjwt` требует лишь `cryptography>=3.4.0`, так что 48.0.1 всех устраивает; весь набор
-тестов на ней проходит. Если версия нужна именно свежая, придётся собирать:
-`brew install openssl@3 pkg-config rust`, затем
+`pyjwt` only asks for `cryptography>=3.4.0`, so 48.0.1 suits everyone; the whole test suite
+passes on it. If you do need a recent version, you will have to build:
+`brew install openssl@3 pkg-config rust`, then
 `export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"`.
 
-**Другие причины.** Сначала посмотрите, что за окружение:
+**Other causes.** First look at what kind of environment you are in:
 
 ```bash
-python -VV      # "free-threading" в выводе -> колёс abi3 нет, возьмите обычный CPython
-pip --version   # старый pip не понимает manylinux_2_34 / musllinux_1_2 и уходит в сборку
-pip install --only-binary=:all: cryptography   # есть ли колесо для вашей платформы вообще
+python -VV      # "free-threading" in the output -> there are no abi3 wheels, take an ordinary CPython
+pip --version   # an old pip does not understand manylinux_2_34 / musllinux_1_2 and goes off to build
+pip install --only-binary=:all: cryptography   # is there a wheel for your platform at all
 ```
 
-На Linux без готового колеса (i686, riscv64, s390x) поставьте заголовки:
-`apt install pkg-config libssl-dev build-essential` или
+On Linux without a ready wheel (i686, riscv64, s390x) install the headers:
+`apt install pkg-config libssl-dev build-essential` or
 `dnf install pkgconf-pkg-config openssl-devel gcc`.
 
-## Если интерфейс выглядит устаревшим
+## If the interface looks out of date
 
-Раньше инспектор отдавал статику только с `ETag`/`Last-Modified`, без `Cache-Control`.
-Chrome в таком случае применяет эвристическое кеширование и при обычном переходе по адресу
-может отдать `app.js` из кеша, не спрашивая сервер, — обновлённый инспектор продолжал
-показывать старый UI до принудительной перезагрузки. Теперь на странице и на `/static/*`
-стоит `Cache-Control: no-cache`: браузер каждый раз перепроверяет (дёшево, `304`), но
-никогда не берёт устаревшую копию вслепую. Если вы обновлялись с более ранней версии,
-одного Cmd/Ctrl+Shift+R хватит, чтобы вылезти из старого кеша.
+The inspector used to serve its static files with only `ETag`/`Last-Modified` and no
+`Cache-Control`. Chrome then applies heuristic caching and, on an ordinary navigation, may serve
+`app.js` out of the cache without asking the server — an updated inspector kept showing the old
+UI until a forced reload. Now the page and `/static/*` carry `Cache-Control: no-cache`: the
+browser revalidates every time (cheap, a `304`) but never takes a stale copy blindly. If you
+upgraded from an earlier version, one Cmd/Ctrl+Shift+R is enough to climb out of the old cache.
 
-## Если заголовок не доходит до сервера
+## If a header does not reach the server
 
-Первым делом посмотрите, что реально ушло в сеть, — инспектор это записывает. В панели
-Log разверните строку `POST … → 200` с тегом `http`: в раскрытом JSON есть
-`request_headers` с заголовками запроса ровно в том виде, в каком их отправил httpx.
-То же самое до первого запроса отдаёт статус:
+First look at what actually went out on the wire — the inspector records it. In the Log panel
+expand the `POST … → 200` line tagged `http`: the expanded JSON has `request_headers` with the
+request's headers exactly as httpx sent them. Before the first request the status gives you the
+same thing:
 
 ```bash
 curl -s localhost:6288/api/status | python3 -m json.tool | grep -A10 sent_headers
 ```
 
-Если заголовка нет и там, и там — причина на стороне инспектора, ищите её ниже. Если он
-там есть, а сервер его не видит — заголовок теряет что-то между вами и сервером
-(обратный прокси, шлюз), и инспектор тут ни при чём.
+If the header is in neither place, the cause is on the inspector's side — look below. If it is
+there but the server does not see it, something between you and the server is dropping it (a
+reverse proxy, a gateway) and the inspector has nothing to do with it.
 
-**Заголовок виден в сайдбаре, но не отправляется.** Так вело себя всё до версии, где
-редактор заголовков стал читаться из DOM. Раньше строки жили в отдельном JS-массиве,
-который обновлялся только по событию `input`, поэтому значение, подставленное
-автозаполнением, менеджером паролей, расширением или восстановлением формы при
-перезагрузке, на экран попадало, а в запрос — нет. Если вы видите это на свежей версии,
-сообщите: тест на этот случай есть в `tests/ui/sidebar.test.mjs`.
+**The header is visible in the sidebar but is not sent.** That is how everything behaved before
+the version where the header editor started being read from the DOM. Rows used to live in a
+separate JS array that was only updated on the `input` event, so a value filled in by
+autocomplete, a password manager, an extension or form restoration after a reload made it onto
+the screen but not into the request. If you see this on a current version, say so: there is a
+test for that case in `tests/ui/sidebar.test.mjs`.
 
-**Строка с значением, но без имени** отправлена не будет: заголовок без имени
-невозможен. При подключении об этом пишется предупреждение в Log.
+**A row with a value but no name** will not be sent: a header without a name is impossible. A
+warning about it goes to the Log on connect.
 
-**Поле Token перекрывает строку списка.** Блок аутентификации применяется после списка
-заголовков, поэтому непустой Token затирает строку с тем же именем — независимо от
-регистра, `authorization` и `Authorization` считаются одним заголовком. Об этом тоже
-пишется предупреждение. Если нужна своя схема (`Token`, `ApiKey`), задавайте её в поле
-Scheme, а не отдельной строкой в списке.
+**The Token field overrides a row in the list.** The authentication block is applied after the
+header list, so a non-empty Token overwrites a row with the same name — regardless of case,
+`authorization` and `Authorization` count as one header. That, too, produces a warning. If you
+need your own scheme (`Token`, `ApiKey`), set it in the Scheme field rather than as a separate
+row in the list.
 
-**Протокольные заголовки переопределить нельзя.** `Accept`, `Content-Type`,
-`mcp-session-id` и `mcp-protocol-version` транспорт проставляет для каждого запроса сам,
-и per-request значения в httpx выигрывают у клиентских. Своё значение здесь молча не
-применится, а попытка задать `mcp-protocol-version` вручную сломает инициализацию —
-сервер ответит `params._meta is missing the required envelope key(s)`. Версию протокола
-выбирают в блоке Advanced, а не заголовком.
+**Protocol headers cannot be overridden.** `Accept`, `Content-Type`, `mcp-session-id` and
+`mcp-protocol-version` are set by the transport on every request, and per-request values win
+over client ones in httpx. Your value here silently will not apply, and setting
+`mcp-protocol-version` by hand breaks initialization — the server answers `params._meta is
+missing the required envelope key(s)`. The protocol version is chosen in the Advanced block, not
+with a header.
 
-**Некорректное значение роняет подключение целиком**, а не отбрасывает один заголовок:
+**A malformed value takes the whole connection down** rather than dropping one header:
 
 ```
-"X-Trace-Id: abc123" в поле имени → LocalProtocolError: Illegal header name
-" abc123" (пробел в начале)       → LocalProtocolError: Illegal header value
-"привет" (не ASCII)               → UnicodeEncodeError: ordinal not in range(128)
+"X-Trace-Id: abc123" in the name field → LocalProtocolError: Illegal header name
+" abc123" (leading space)              → LocalProtocolError: Illegal header value
+"привет" (non-ASCII)                   → UnicodeEncodeError: ordinal not in range(128)
 ```
 
-Первый случай — самый частый: в поле имени вставляют строку целиком, как в
-`curl --header "X-Trace-Id: abc123"`. Имя и значение здесь в разных полях.
+The first is the most common: the whole string gets pasted into the name field, as in
+`curl --header "X-Trace-Id: abc123"`. Here the name and the value are separate fields.
 
-Подчёркивания в имени, пробелы по краям имени и пустое значение допустимы и доходят
-как есть.
+Underscores in a name, spaces around a name and an empty value are all allowed and arrive as
+they are.
 
-## Ограничения
+## Limitations
 
-- Одно активное подключение на инспектор (как и в оригинале).
-- OAuth-флоу нет: токен вводится вручную в блоке аутентификации. Обновлять его на живом
-  соединении можно (`/api/auth`), но добывать — нельзя; истечение токена инспектор не
-  отслеживает и сам ничего не перевыпускает.
-- Список версий берётся из `mcp_types.version`, то есть ограничен тем, что умеет
-  установленный SDK; произвольную строку ввести нельзя.
-- Токен из блока аутентификации в пресетах не хранится вообще; пароли к ключам и прочие
-  секреты в заголовках и env — хранятся открытым текстом (при экспорте вычищаются).
-  Сами сертификаты не копируются — в конфигурации лежат только пути к ним.
-- `resources/subscribe` и sampling помечены в SDK как устаревшие с протокола `2026-07-28`;
-  инспектор их всё равно отправляет — на серверах постарше они работают.
+- One active connection per inspector (as in the original).
+- No built-in OAuth flow: the token is either typed into the authentication block or printed by
+  a [token script](#token-scripts). An edit reaches a live session on its own, but the inspector
+  does not track expiry — nothing is reissued unless you press **Get token** or run the script
+  against `/api/auth` yourself.
+- The version list comes from `mcp_types.version`, i.e. it is bounded by what the installed SDK
+  knows; an arbitrary string cannot be typed in.
+- The token from the authentication block is not stored in presets at all; key passphrases and
+  other secrets in headers and env are stored as plain text (and stripped on export). The
+  certificates themselves are not copied — the configuration holds only paths to them.
+- `resources/subscribe` and sampling are marked deprecated in the SDK as of protocol
+  `2026-07-28`; the inspector sends them anyway — on older servers they work.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

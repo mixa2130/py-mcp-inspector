@@ -124,12 +124,12 @@
       </label>
       <div class="btn-row">
         <button class="small" id="btn-auth-plugin" disabled>Get token</button>
-        <button class="small" id="btn-auth-apply" disabled>Apply to live session</button>
       </div>
       <p class="hint" id="auth-plugin-hint">The script runs as a separate process with the inspector's
         own rights, and whatever it prints becomes the token. Connect runs it first when it is set.</p>
-      <p class="hint" id="auth-apply-hint">Sends a fresh token on the next request, keeping the session
-        and its <span class="mono">mcp-session-id</span>. Connect to enable.</p>
+      <p class="hint" id="auth-apply-hint">On a live HTTP session an edited token, scheme or header name
+        is applied on its own: it goes out with the next request, and the session keeps its
+        <span class="mono">mcp-session-id</span>.</p>
     </div>
 
     <div class="section collapsible collapsed" id="section-tls">
