@@ -4,11 +4,37 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pymcpinspector"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Python MCP Inspector: connect to MCP servers over stdio, SSE or Streamable HTTP, with full control over request headers."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Michael S2pac", email = "mixa21.11@mail.ru" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "inspector",
+    "debugging",
+    "json-rpc",
+    "sse",
+    "streamable-http",
+]
+# No "License ::" classifier: the license is declared as an SPDX expression
+# above (PEP 639), and an index rejects a package that says it twice.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Software Development :: Testing",
+]
 dependencies = [
     "mcp>=2.0",
     "fastapi>=0.110",
@@ -22,11 +48,37 @@ dependencies = [
 # that an ordinary install brings none of it.
 dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27", "ruff>=0.5"]
 
+[project.urls]
+Homepage = "https://github.com/mixa2130/py-mcp-inspector"
+Repository = "https://github.com/mixa2130/py-mcp-inspector"
+Changelog = "https://github.com/mixa2130/py-mcp-inspector/blob/master/CHANGELOG.md"
+Issues = "https://github.com/mixa2130/py-mcp-inspector/issues"
+
 [project.scripts]
 pymcpinspector = "pymcpinspector.cli:main"
 
 [tool.hatch.build.targets.wheel]
+# The UI ships as it is served: static/ has no build step, and the package is
+# useless without it.
 packages = ["pymcpinspector"]
+
+[tool.hatch.build.targets.sdist]
+# An sdist that cannot run the suite is a source distribution in name only, so
+# tests and examples travel with it -- including the demo server everything in
+# the README is checked against.
+include = [
+    "pymcpinspector",
+    "examples",
+    "tests",
+    "docs/screenshots",
+    "README.md",
+    "README.ru.md",
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "LICENSE",
+    "requirements.txt",
+]
+exclude = ["tests/ui/node_modules"]
 
 [tool.ruff]
 line-length = 120

@@ -6,13 +6,14 @@
 [English](README.md) | [Русский](README.ru.md)
 
 ```
-pip install -e .
+pip install pymcpinspector
 pymcpinspector
 ```
 
-Откроется `http://127.0.0.1:6288/`.
+Откроется `http://127.0.0.1:6288/`. Из клона репозитория — `pip install -e .`, а вообще без
+установки — `python -m pymcpinspector`.
 
-![Инспектор, подключённый к демо-серверу: слева список инструментов, справа результат вызова](docs/screenshots/overview.jpg)
+![Инспектор, подключённый к демо-серверу: слева список инструментов, справа результат вызова](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/overview.jpg)
 
 Все скриншоты здесь — живой интерфейс против `examples/demo_server.py`, так что любой из них
 воспроизводится за пару минут.
@@ -141,7 +142,7 @@ curl -s localhost:6288/api/auth \
 | Inspector JSON | всё целиком: TLS, таймауты, версия протокола, roots — ровно то, что читает импорт этого же инспектора |
 | mcpServers JSON | блок в стиле Claude Desktop / VS Code: переносимо, но доезжает только то, что понимают те клиенты |
 
-![Диалог Share presets: блок mcpServers, под ним перечислены обнулённый X-Api-Key и не переносимый protocol_version](docs/screenshots/share-presets.jpg)
+![Диалог Share presets: блок mcpServers, под ним перечислены обнулённый X-Api-Key и не переносимый protocol_version](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/share-presets.jpg)
 
 Во втором случае диалог честно перечисляет, что не поместилось (`prod: verify_tls,
 prod: request_timeout`). Токен там кладётся прямо в `headers`, потому что отдельного поля
@@ -186,7 +187,7 @@ mTLS, пароль к зашифрованному ключу и галка, о�
 уровне транспорта, а не логов SDK), HTTP-обмен (метод, URL, статус, заголовки),
 нотификации, `notifications/message` от сервера и stderr дочернего процесса для stdio.
 
-![Панель журнала с раскрытой HTTP-записью: заголовки запроса ровно в том виде, в каком их отправил httpx](docs/screenshots/log-http.jpg)
+![Панель журнала с раскрытой HTTP-записью: заголовки запроса ровно в том виде, в каком их отправил httpx](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/log-http.jpg)
 
 **Ошибки.** Вкладка **Errors** собирает всё, что пошло не так, независимо от вида события:
 ошибки JSON-RPC и отказы самого инспектора (`kind: "error"`), ошибки и предупреждения
@@ -195,7 +196,7 @@ mTLS, пароль к зашифрованному ключу и галка, о�
 инспектор, невалидный JSON в аргументах, обрыв потока событий и любое исключение в самом UI.
 Всё, что логирует бэкенд, дублируется в вывод процесса (`--log-level`).
 
-![Упавший вызов инструмента: результат помечен isError, счётчик на вкладке Errors вырос](docs/screenshots/tool-error.jpg)
+![Упавший вызов инструмента: результат помечен isError, счётчик на вкладке Errors вырос](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/tool-error.jpg)
 
 **Пресеты.** Именованные конфигурации в `~/.pymcpinspector/servers.json`, плюс импорт блока
 `mcpServers` из конфигов Claude Desktop / VS Code.
@@ -237,7 +238,7 @@ python examples/demo_server.py --transport streamable-http --port 8931
 отличается от умолчаний, — например `no verify · custom CA · client cert` или
 `2024-11-05 · log debug`; пароль к ключу туда не попадает.
 
-![Заполненный блок TLS на HTTPS-демо-сервере и панель Server с действующим набором](docs/screenshots/tls.jpg)
+![Заполненный блок TLS на HTTPS-демо-сервере и панель Server с действующим набором](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/tls.jpg)
 
 | Поле | Что делает |
 |---|---|
@@ -324,7 +325,7 @@ OAuth-флоу в инспекторе нет и не планируется: т
 - **Connect** сначала запускает скрипт и подключается с тем, что тот напечатал: токен, добытый
   после хендшейка, — уже не тот токен, с которым хендшейк прошёл.
 
-![Блок Authentication со скриптом для токена и журнал с двумя его запусками](docs/screenshots/token-plugin.jpg)
+![Блок Authentication со скриптом для токена и журнал с двумя его запусками](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/token-plugin.jpg)
 
 На скриншоте — весь цикл: скрипт отработал дважды, обычным образом и с `--json`, причём второй
 запуск ещё и перенёс учётку из `Authorization` в `X-Api-Key` — поэтому поле Scheme опустело, а
@@ -434,7 +435,7 @@ export IDP_URL=https://idp.example.com IDP_USER=svc-inspector IDP_PASSWORD=…
 | панель промпта | `prompts/get` | имя и заполненные аргументы |
 | вкладка Raw request | любой | что набрано в полях |
 
-![Диалог Copy as curl для tools/call на ревизии 2026-07-28](docs/screenshots/curl.jpg)
+![Диалог Copy as curl для tools/call на ревизии 2026-07-28](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/curl.jpg)
 
 В самом диалоге есть селектор метода: он переключает между беспараметрическими
 (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, `ping`), так что
@@ -552,7 +553,7 @@ tests/
 ## Тесты
 
 ```
-pytest -q      # 199 тестов
+pytest -q      # 200 тестов
 ruff check .
 ```
 

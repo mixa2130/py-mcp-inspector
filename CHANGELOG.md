@@ -8,6 +8,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-21
+
 ### Добавлено
 
 - Свой скрипт для получения токена: путь и аргументы задаются в блоке Authentication,
@@ -95,5 +97,6 @@
 
 - Свои заголовки терялись по дороге к серверу.
 
-[Unreleased]: https://gitverse.ru/mixa2130/pymcpinspector/compare/v0.1.0...HEAD
-[0.1.0]: https://gitverse.ru/mixa2130/pymcpinspector/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mixa2130/py-mcp-inspector/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/mixa2130/py-mcp-inspector/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/mixa2130/py-mcp-inspector/releases/tag/v0.1.0

@@ -6,13 +6,14 @@ A local web UI for talking to MCP servers, with full control over the transport 
 
 
 ```
-pip install -e .
+pip install pymcpinspector
 pymcpinspector
 ```
 
-Opens `http://127.0.0.1:6288/`.
+Opens `http://127.0.0.1:6288/`. From a checkout it is `pip install -e .` instead, and without
+installing anything, `python -m pymcpinspector`.
 
-![The inspector connected to the demo server: tools on the left, the result of a call on the right](docs/screenshots/overview.jpg)
+![The inspector connected to the demo server: tools on the left, the result of a call on the right](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/overview.jpg)
 
 Every screenshot here is the real UI against `examples/demo_server.py`, so you can reproduce
 each one in a couple of minutes.
@@ -146,7 +147,7 @@ In the second case the dialog honestly lists what did not fit (`prod: verify_tls
 prod: request_timeout`). The token goes straight into `headers` there, because `mcpServers` has
 no separate field for credentials.
 
-![The Share presets dialog: an mcpServers block, with the blanked X-Api-Key and the dropped protocol_version listed underneath](docs/screenshots/share-presets.jpg)
+![The Share presets dialog: an mcpServers block, with the blanked X-Api-Key and the dropped protocol_version listed underneath](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/share-presets.jpg)
 
 **Secrets are stripped by default.** Always — the Token and Key passphrase fields (the first of
 which is empty by this point anyway); out of the headers and the environment variables — those
@@ -188,7 +189,7 @@ open). Switching presets or disconnecting clears the catalog.
 status, headers), notifications, `notifications/message` from the server, and the child
 process's stderr for stdio.
 
-![The log panel with an HTTP entry expanded, showing the request headers exactly as httpx sent them](docs/screenshots/log-http.jpg)
+![The log panel with an HTTP entry expanded, showing the request headers exactly as httpx sent them](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/log-http.jpg)
 
 **Errors.** The **Errors** tab collects everything that went wrong, whatever kind of event it
 was: JSON-RPC errors and the inspector's own refusals (`kind: "error"`), transport errors and
@@ -197,7 +198,7 @@ piled up since the last clear. It also catches what the backend never sees: an u
 inspector, invalid JSON in the arguments, a broken event stream and any exception in the UI
 itself. Everything the backend logs is mirrored into the process output (`--log-level`).
 
-![A failing tool call: the result is marked isError and the Errors tab counter goes up](docs/screenshots/tool-error.jpg)
+![A failing tool call: the result is marked isError and the Errors tab counter goes up](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/tool-error.jpg)
 
 **Presets.** Named configurations in `~/.pymcpinspector/servers.json`, plus importing an
 `mcpServers` block from Claude Desktop / VS Code configs.
@@ -239,7 +240,7 @@ the choice is remembered in the browser. While a section is collapsed its header
 with whatever inside differs from the defaults, say `no verify · custom CA · client cert` or
 `2024-11-05 · log debug`; the key passphrase never goes in there.
 
-![The TLS block filled in against an HTTPS demo server, and the Server panel showing the set that is in force](docs/screenshots/tls.jpg)
+![The TLS block filled in against an HTTPS demo server, and the Server panel showing the set that is in force](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/tls.jpg)
 
 | Field | What it does |
 |---|---|
@@ -327,7 +328,7 @@ and uses. Fill in **Token script** (and **Script arguments**) in the Authenticat
 - **Connect** runs it first and connects with what it printed, because a token minted after the
   handshake is not the token the handshake was made with.
 
-![The Authentication block with a token script, and the log showing two runs of it](docs/screenshots/token-plugin.jpg)
+![The Authentication block with a token script, and the log showing two runs of it](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/token-plugin.jpg)
 
 The screenshot above is the whole loop: the script ran twice, once plain and once with `--json`,
 and the second run also moved the credential from `Authorization` to `X-Api-Key` — which is why
@@ -436,7 +437,7 @@ sits next to every basic method:
 | prompt panel | `prompts/get` | the name and the arguments you filled in |
 | Raw request tab | anything | whatever is typed in the fields |
 
-![The Copy as curl dialog for tools/call on the 2026-07-28 revision](docs/screenshots/curl.jpg)
+![The Copy as curl dialog for tools/call on the 2026-07-28 revision](https://raw.githubusercontent.com/mixa2130/py-mcp-inspector/master/docs/screenshots/curl.jpg)
 
 The dialog itself has a method selector: it switches between the parameterless ones
 (`tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, `ping`), which is
@@ -555,7 +556,7 @@ long tool call does not block the rest of the interface.
 ## Tests
 
 ```
-pytest -q      # 199 tests
+pytest -q      # 200 tests
 ruff check .
 ```
 
